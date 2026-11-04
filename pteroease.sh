@@ -309,13 +309,20 @@ install_panel_guided() {
     printf '  %sThis will fully install Pterodactyl Panel on this machine.%s\n\n' "$C_YELLOW" "$C_RESET"
 
     while [[ -z "$DOMAIN" ]]; do
-        read -r -p "  Panel domain (e.g. panel.example.com): " DOMAIN
-        [[ -z "$DOMAIN" ]] && log WARN "Domain cannot be empty."
+        read -r -p "  Panel domain or server IP (e.g. panel.example.com): " DOMAIN
+        DOMAIN="${DOMAIN#http://}"
+        DOMAIN="${DOMAIN#https://}"
+        DOMAIN="${DOMAIN%%/*}"
+        [[ -z "$DOMAIN" ]] && log WARN "Host cannot be empty."
     done
 
-    printf '  %s▶%s Use SSL / Let'\''s Encrypt? (requires domain to resolve here)\n' "$C_CYAN" "$C_RESET"
+    printf '  %s▶%s Use SSL / Let'\''s Encrypt? (requires a DNS name pointing to this server)\n' "$C_CYAN" "$C_RESET"
     read -r -p "  Use SSL? [Y/n]: " ssl_ans
     [[ "${ssl_ans,,}" == "n" ]] && USE_SSL="no" || USE_SSL="yes"
+    if [[ "$USE_SSL" == "yes" && "$DOMAIN" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        log WARN "Let's Encrypt cannot issue a standard certificate for an IP address. Switching to HTTP."
+        USE_SSL="no"
+    fi
 
     read -r -p "  Database name [$PANEL_DB_NAME]: " _in
     [[ -n "$_in" ]] && PANEL_DB_NAME="$_in"
@@ -360,9 +367,14 @@ install_panel_guided() {
 
     run_task "Add Redis official repo" \
         bash -c '
-            curl -fsSL https://packages.redis.io/gpg | gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+            set -euo pipefail
+            tmp_key="$(mktemp)"
+            trap 'rm -f "$tmp_key"' EXIT
+            curl -fsSL https://packages.redis.io/gpg -o "$tmp_key"
+            gpg --dearmor --yes -o /usr/share/keyrings/redis-archive-keyring.gpg "$tmp_key"
+            chmod 0644 /usr/share/keyrings/redis-archive-keyring.gpg
             echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" \
-                | tee /etc/apt/sources.list.d/redis.list
+                > /etc/apt/sources.list.d/redis.list
         ' || return 1
 
     run_task "apt update" apt-get update || return 1
@@ -410,10 +422,14 @@ install_panel_guided() {
     # ── 7. Artisan setup ──────────────────────
     run_task "Generate APP_KEY" bash -c "cd ${PANEL_DIR} && php artisan key:generate --force" || return 1
 
+    local panel_scheme="http"
+    [[ "$USE_SSL" == "yes" ]] && panel_scheme="https"
+    local panel_url="${panel_scheme}://${DOMAIN}"
+
     run_task "Configure environment (non-interactive)" \
         bash -c "cd ${PANEL_DIR} && php artisan p:environment:setup \
             --author='${ADMIN_EMAIL}' \
-            --url='http${USE_SSL:+s}://${DOMAIN}' \
+            --url='${panel_url}' \
             --timezone='UTC' \
             --cache='redis' \
             --session='redis' \
@@ -488,6 +504,14 @@ PTEROQ
         certbot certonly --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$ADMIN_EMAIL" || {
             log WARN "certbot failed — continuing without SSL. Re-run certbot manually."
             USE_SSL="no"
+            panel_url="http://${DOMAIN}"
+            if grep -q '^APP_URL=' "${PANEL_DIR}/.env"; then
+                sed -i "s|^APP_URL=.*|APP_URL=${panel_url}|" "${PANEL_DIR}/.env"
+            else
+                printf '\nAPP_URL=%s\n' "$panel_url" >> "${PANEL_DIR}/.env"
+            fi
+            run_task "Clear Panel config cache after SSL fallback" \
+                bash -c "cd ${PANEL_DIR} && php artisan config:clear" || return 1
         }
     fi
 
