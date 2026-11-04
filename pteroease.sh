@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # SPYDR — Pterodactyl Management Toolkit
 # Supported target: Ubuntu 22.04 / 24.04
-# Run: sudo bash pteroease.sh
+# Run: sudo bash SPYDR-Pterodactyl-Manager-v1.1.0.sh
+# Review the script before running it with root privileges.
 
 set -uo pipefail
 umask 077
 
 APP="SPYDR"
-VERSION="1.0.0"
+VERSION="1.1.0"
 PANEL_DIR="/var/www/pterodactyl"
 WINGS_CONFIG="/etc/pterodactyl/config.yml"
 BACKUP_ROOT="/var/backups/pteroease"
@@ -62,7 +63,7 @@ log() {
         ERROR) printf '  %s✖  %s%s\n'   "$C_RED"    "$msg" "$C_RESET" ;;
         WARN)  printf '  %s⚠  %s%s\n'   "$C_YELLOW" "$msg" "$C_RESET" ;;
         OK)    printf '  %s✔  %s%s\n'   "$C_GREEN"  "$msg" "$C_RESET" ;;
-        *)     printf '  %s›  %s%s\n'   "$C_CYAN"   "$msg" "$C_RESET" ;;
+        *)     printf '  %s›  %s%s\n'   "$C_RED"    "$msg" "$C_RESET" ;;
     esac
 }
 
@@ -71,30 +72,44 @@ log() {
 # ─────────────────────────────────────────────
 header() {
     clear 2>/dev/null || true
-    printf '%s\n' "$C_CYAN"
-    echo "  ███████╗██████╗ ██╗   ██╗██████╗ ██████╗ "
-    echo "  ██╔════╝██╔══██╗╚██╗ ██╔╝██╔══██╗██╔══██╗"
-    echo "  ███████╗██████╔╝ ╚████╔╝ ██████╔╝██████╔╝"
-    echo "  ╚════██║██╔═══╝   ╚██╔╝  ██╔══██╗██╔══██╗"
-    echo "  ███████║██║        ██║   ██║  ██║██║  ██║"
-    echo "  ╚══════╝╚═╝        ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝"
+    local os_name panel_mark wings_mark nginx_state queue_state docker_state
+    os_name="$(. /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-Unknown Linux}")"
+
+    panel_mark="NOT INSTALLED"
+    wings_mark="NOT INSTALLED"
+    panel_installed && panel_mark="INSTALLED"
+    wings_installed && wings_mark="INSTALLED"
+
+    systemctl is-active --quiet nginx 2>/dev/null && nginx_state="ONLINE" || nginx_state="OFFLINE"
+    systemctl is-active --quiet pteroq 2>/dev/null && queue_state="RUNNING" || queue_state="STOPPED"
+    systemctl is-active --quiet docker 2>/dev/null && docker_state="RUNNING" || docker_state="STOPPED"
+
+    printf '\n%s' "$C_RED"
+    printf '  ╔══════════════════════════════════════════════════════════════╗\n'
+    printf '  ║                                                              ║\n'
+    printf '  ║   ███████╗██████╗ ██╗   ██╗██████╗ ██████╗                  ║\n'
+    printf '  ║   ██╔════╝██╔══██╗╚██╗ ██╔╝██╔══██╗██╔══██╗                 ║\n'
+    printf '  ║   ███████╗██████╔╝ ╚████╔╝ ██████╔╝██████╔╝                 ║\n'
+    printf '  ║   ╚════██║██╔═══╝   ╚██╔╝  ██╔══██╗██╔══██╗                 ║\n'
+    printf '  ║   ███████║██║        ██║   ██║  ██║██║  ██║                 ║\n'
+    printf '  ║   ╚══════╝╚═╝        ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝                 ║\n'
+    printf '  ║                                                              ║\n'
+    printf '  ║              P T E R O D A C T Y L   M A N A G E R           ║\n'
+    printf '  ╚══════════════════════════════════════════════════════════════╝\n'
     printf '%s\n' "$C_RESET"
-    printf '       %sMade by SpiderGamer with ❤️%s\n' "$C_YELLOW" "$C_RESET"
-    echo
-    printf '  %sSPYDR%s | Pterodactyl Management Toolkit   %sv%s%s\n' \
-        "$C_BLUE$C_BOLD" "$C_RESET" "$C_DIM" "$VERSION" "$C_RESET"
-    printf '  %s────────────────────────────────────────────%s\n' "$C_DIM" "$C_RESET"
-    printf '  Host: %s%s%s\n' "$C_BOLD" "$(hostname)" "$C_RESET"
-    printf '  OS:   %s\n' "$(grep -oP '^PRETTY_NAME="\K[^"]+' /etc/os-release 2>/dev/null || echo unknown)"
-    local panel_status wings_status
-    panel_status="$(systemctl is-active pteroq 2>/dev/null || echo unknown)"
-    wings_status="$(systemctl is-active wings   2>/dev/null || echo unknown)"
-    _status_colour() {
-        [[ "$1" == "active" ]] && printf '%s%s%s' "$C_GREEN" "$1" "$C_RESET" \
-                               || printf '%s%s%s' "$C_RED"   "$1" "$C_RESET"
-    }
-    printf '  Panel: %s   Wings: %s\n' "$(_status_colour "$panel_status")" "$(_status_colour "$wings_status")"
-    printf '  %s────────────────────────────────────────────%s\n\n' "$C_DIM" "$C_RESET"
+    printf '  %sSPYDR%s  %sHOSTING CONTROL CENTER%s  %sv%s\n' \
+        "$C_RED$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_DIM" "$VERSION"
+    printf '  %s──────────────────────────────────────────────────────────────%s\n' "$C_RED" "$C_RESET"
+    printf '  %sHOST%s  %-22s  %sOS%s  %s\n' \
+        "$C_RED" "$C_RESET" "$(hostname)" "$C_RED" "$C_RESET" "$os_name"
+    printf '  %sPANEL%s  %-22s  %sWINGS%s  %-22s\n' \
+        "$C_RED" "$C_RESET" "$(status_badge "$panel_mark")" \
+        "$C_RED" "$C_RESET" "$(status_badge "$wings_mark")"
+    printf '  %sNGINX%s  %-22s  %sQUEUE%s  %-22s  %sDOCKER%s  %s\n' \
+        "$C_RED" "$C_RESET" "$(status_badge "$nginx_state")" \
+        "$C_RED" "$C_RESET" "$(status_badge "$queue_state")" \
+        "$C_RED" "$C_RESET" "$(status_badge "$docker_state")"
+    printf '  %s──────────────────────────────────────────────────────────────%s\n\n' "$C_RED" "$C_RESET"
 }
 
 # ─────────────────────────────────────────────
@@ -141,7 +156,7 @@ progress_wait() {
     local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     local i=0
     while kill -0 "$pid" 2>/dev/null; do
-        printf '\r  %s%s%s %s' "$C_CYAN" "${frames:i%10:1}" "$C_RESET" "$label"
+        printf '\r  %s%s%s %s' "$C_RED" "${frames:i%10:1}" "$C_RESET" "$label"
         sleep 0.1
         (( i += 1 ))
     done
@@ -157,15 +172,21 @@ progress_wait() {
 
 run_task() {
     local label="$1"; shift
+    local rc=0
     log INFO "START: $label"
-    "$@" > >(tee -a "$LOG_FILE") 2> >(tee -a "$LOG_FILE" >&2) &
+
+    # Keep command output in the log while the spinner owns the terminal line.
+    # This prevents apt/curl output from overwriting or colliding with the UI.
+    "$@" >>"$LOG_FILE" 2>&1 &
     local pid=$!
-    progress_wait "$pid" "$label"
-    local rc=$?
+    progress_wait "$pid" "$label" || rc=$?
+
     if (( rc == 0 )); then
         log OK "$label"
     else
         log ERROR "$label failed with exit code $rc"
+        printf '  %sRecent command output:%s\n' "$C_YELLOW" "$C_RESET"
+        tail -n 18 "$LOG_FILE" 2>/dev/null | sed 's/^/    /' || true
     fi
     return "$rc"
 }
@@ -176,9 +197,32 @@ run_task() {
 section_header() {
     local title="$1"
     echo
-    printf '  %s%s%s\n' "$C_GREEN$C_BOLD" "$title" "$C_RESET"
-    printf '  %s────────────────────────────────────────────%s\n' "$C_DIM" "$C_RESET"
+    printf '  %s▌ %s%s%s\n' "$C_RED$C_BOLD" "$title" "$C_RESET" "$C_RESET"
+    printf '  %s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$C_RED" "$C_RESET"
     echo
+}
+
+menu_section() {
+    local title="$1"
+    printf '\n  %s━━ %s ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' \
+        "$C_RED$C_BOLD" "$title" "$C_RESET"
+}
+
+menu_option() {
+    local key="$1" label="$2" detail="${3:-}"
+    printf '  %s[%2s]%s  %-29s %s%s%s\n' \
+        "$C_RED$C_BOLD" "$key" "$C_RESET" "$label" "$C_DIM" "$detail" "$C_RESET"
+}
+
+status_badge() {
+    case "$1" in
+        INSTALLED|ONLINE|RUNNING)
+            printf '%s● %s%s' "$C_GREEN" "$1" "$C_RESET"
+            ;;
+        *)
+            printf '%s● %s%s' "$C_RED" "$1" "$C_RESET"
+            ;;
+    esac
 }
 
 # ─────────────────────────────────────────────
@@ -369,7 +413,7 @@ install_panel_guided() {
         bash -c '
             set -euo pipefail
             tmp_key="$(mktemp)"
-            trap 'rm -f "$tmp_key"' EXIT
+            trap "rm -f \\$tmp_key" EXIT
             curl -fsSL https://packages.redis.io/gpg -o "$tmp_key"
             gpg --dearmor --yes -o /usr/share/keyrings/redis-archive-keyring.gpg "$tmp_key"
             chmod 0644 /usr/share/keyrings/redis-archive-keyring.gpg
@@ -763,12 +807,12 @@ WINGSVC
 service_menu() {
     header
     section_header "Service Controls"
-    echo "  [1]  Panel queue worker  (pteroq)"
-    echo "  [2]  Web server          (nginx)"
-    echo "  [3]  Database            (mariadb)"
-    echo "  [4]  Cache               (redis-server)"
-    echo "  [5]  Wings"
-    echo "  [6]  Docker"
+    menu_option 1 "Panel queue worker" "pteroq"
+    menu_option 2 "Web server"         "nginx"
+    menu_option 3 "Database"           "mariadb"
+    menu_option 4 "Cache"              "redis-server"
+    menu_option 5 "Wings"              "wings"
+    menu_option 6 "Docker"             "docker"
     echo
     read -r -p "  Select service: " n
     local service
@@ -782,7 +826,11 @@ service_menu() {
         *) log ERROR "Invalid selection."; return 1 ;;
     esac
     echo
-    echo "  [1] Status   [2] Start   [3] Stop   [4] Restart"
+    menu_section "SERVICE ACTION"
+    menu_option 1 "Show service status" "Read current systemd state"
+    menu_option 2 "Start service"       "Bring service online"
+    menu_option 3 "Stop service"        "Stop the selected service"
+    menu_option 4 "Restart service"     "Restart the selected service"
     echo
     read -r -p "  Select action: " a
     case "$a" in
@@ -878,10 +926,10 @@ view_logs() {
     printf '  %s▶%s journalctl -u wings -n 50\n'  "$C_CYAN" "$C_RESET"
     printf '  %s▶%s journalctl -u pteroq -n 50\n' "$C_CYAN" "$C_RESET"
     echo
-    echo "  [1]  SPYDR log"
-    echo "  [2]  Panel queue worker  (pteroq)"
-    echo "  [3]  Wings"
-    echo "  [4]  Nginx"
+    menu_option 1 "SPYDR log"          "Installer activity"
+    menu_option 2 "Panel queue worker" "pteroq"
+    menu_option 3 "Wings"              "wings service"
+    menu_option 4 "Nginx"              "web server"
     echo
     read -r -p "  Select log source: " c
     echo
@@ -1234,13 +1282,13 @@ admin_menu() {
     while true; do
         header
         section_header "User / Admin Management"
-        echo "  [1]  List all users"
-        echo "  [2]  Create new user"
-        echo "  [3]  Promote user to admin"
-        echo "  [4]  Demote admin to regular user"
-        echo "  [5]  Reset user password"
-        echo "  [6]  Delete user"
-        echo "  [0]  Back to main menu"
+        menu_option 1 "List all users"              "View Panel accounts"
+        menu_option 2 "Create new user"             "Add a Panel account"
+        menu_option 3 "Promote user to admin"       "Grant administrator role"
+        menu_option 4 "Demote admin"                "Remove administrator role"
+        menu_option 5 "Reset user password"        "Set a new account password"
+        menu_option 6 "Delete user"                "Permanently remove account"
+        menu_option 0 "Back to main menu"          "Return to SPYDR"
         echo
         printf '  %s────────────────────────────────────────────%s\n' "$C_DIM" "$C_RESET"
         printf '  Select an option: '
@@ -1397,36 +1445,34 @@ _admin_delete_user() {
 main_menu() {
     while true; do
         header
-        printf '  %s[SETUP]%s\n'           "$C_YELLOW$C_BOLD" "$C_RESET"
-        echo "  [1]  Install basic dependencies"
-        echo "  [2]  Install Panel  (full auto)"
-        echo "  [3]  Install Wings  (full auto)"
-        echo "  [B]  Blueprint — view install overview"
-        echo
-        printf '  %s[MANAGEMENT]%s\n'      "$C_YELLOW$C_BOLD" "$C_RESET"
-        echo "  [4]  Service controls"
-        echo "  [5]  Diagnostics"
-        echo "  [6]  View logs"
-        echo "  [U]  User / Admin management"
-        echo
-        printf '  %s[BACKUPS / RESTORE]%s\n' "$C_YELLOW$C_BOLD" "$C_RESET"
-        echo "  [7]  Create backup — Panel"
-        echo "  [8]  Create backup — Wings"
-        echo "  [9]  List backups"
-        echo "  [10] Restore backup"
-        echo
-        printf '  %s[UPDATES]%s\n'         "$C_YELLOW$C_BOLD" "$C_RESET"
-        echo "  [11] Update Panel"
-        echo "  [12] Update Wings"
-        echo
-        printf '  %s[REMOVAL]%s\n'         "$C_YELLOW$C_BOLD" "$C_RESET"
-        echo "  [13] Remove Panel  (auto backup)"
-        echo "  [14] Remove Wings  (auto backup)"
-        echo
-        echo "  [0]  Exit"
-        echo
-        printf '  %s────────────────────────────────────────────%s\n' "$C_DIM" "$C_RESET"
-        printf '  Select an option: '
+
+        menu_section "INSTALLATION"
+        menu_option 1  "Install dependencies"       "Prepare Ubuntu packages"
+        menu_option 2  "Install Pterodactyl Panel"  "Full guided installation"
+        menu_option 3  "Install Wings"              "Docker + Wings setup"
+        menu_option B  "Installation blueprint"    "View the install plan"
+
+        menu_section "MANAGEMENT"
+        menu_option 4  "Service controls"            "Start / stop / restart services"
+        menu_option 5  "System diagnostics"          "Health, ports, disk and memory"
+        menu_option 6  "View logs"                   "SPYDR, Panel, Wings and Nginx"
+        menu_option U  "User / Admin management"    "Manage Panel accounts"
+
+        menu_section "BACKUP & RESTORE"
+        menu_option 7  "Backup Panel"                "Files + database"
+        menu_option 8  "Backup Wings"                "Wings configuration"
+        menu_option 9  "List backups"                "View saved archives"
+        menu_option 10 "Restore backup"              "Restore Panel or Wings"
+
+        menu_section "MAINTENANCE"
+        menu_option 11 "Update Panel"                "Download latest Panel release"
+        menu_option 12 "Update Wings"                "Download latest Wings binary"
+        menu_option 13 "Remove Panel"                "Create backup before removal"
+        menu_option 14 "Remove Wings"                "Create backup before removal"
+        menu_option 0  "Exit SPYDR"                  "Close the manager"
+
+        printf '\n  %s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "$C_RED" "$C_RESET"
+        printf '  %sSelect option%s %s[0-14, B, U]%s  › ' "$C_RED$C_BOLD" "$C_RESET" "$C_DIM" "$C_RESET"
         read -r choice || exit 0
         case "${choice,,}" in
             1)   install_dependencies    ;;
@@ -1445,7 +1491,7 @@ main_menu() {
             12)  update_wings            ;;
             13)  remove_panel            ;;
             14)  remove_wings            ;;
-            0)   printf '\n  %sExiting SPYDR. Goodbye!%s\n\n' "$C_CYAN" "$C_RESET"
+            0)   printf '\n  %sExiting SPYDR. Goodbye!%s\n\n' "$C_RED" "$C_RESET"
                  exit 0 ;;
             *)   log ERROR "Invalid option '$choice'." ;;
         esac
@@ -1458,7 +1504,7 @@ main_menu() {
 # ─────────────────────────────────────────────
 if [[ "${1:-}" == "--help" ]]; then
     printf 'SPYDR %s — Pterodactyl Management Toolkit\n' "$VERSION"
-    printf 'Run with: sudo bash pteroease.sh\n'
+    printf 'Run with: sudo bash %s\n' "$(basename "$0")"
     exit 0
 fi
 
