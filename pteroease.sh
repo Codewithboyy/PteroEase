@@ -8,7 +8,7 @@ set -uo pipefail
 umask 077
 
 APP="SPYDR"
-VERSION="1.1.0"
+VERSION="1.1.1"
 PANEL_DIR="/var/www/pterodactyl"
 WINGS_CONFIG="/etc/pterodactyl/config.yml"
 BACKUP_ROOT="/var/backups/pteroease"
@@ -334,6 +334,37 @@ install_dependencies() {
     log OK "Basic dependencies installed."
 }
 
+# Create the Panel database without nested bash quoting. In particular, keep
+# SQL identifier backticks inside this shell function so Bash cannot interpret
+# them as command substitutions (the previous `bash -c "...\`name\`..."`
+# form tried to execute the database name as a command).
+create_panel_database() {
+    local escaped_pass
+
+    # Database and account identifiers are inserted as SQL identifiers/names.
+    # Restrict them to a conservative character set and MySQL's 64-char limit.
+    if [[ ! "$PANEL_DB_NAME" =~ ^[A-Za-z0-9_]{1,64}$ ]]; then
+        log ERROR "Database name must be 1-64 characters: letters, numbers, or underscores only."
+        return 1
+    fi
+    if [[ ! "$PANEL_DB_USER" =~ ^[A-Za-z0-9_]{1,64}$ ]]; then
+        log ERROR "Database username must be 1-64 characters: letters, numbers, or underscores only."
+        return 1
+    fi
+
+    # Escape MySQL string-literal characters in the password.
+    escaped_pass="${PANEL_DB_PASS//\\/\\\\}"
+    escaped_pass=${escaped_pass//\'/\'\'}
+
+    mysql <<SQL
+CREATE USER IF NOT EXISTS '${PANEL_DB_USER}'@'127.0.0.1' IDENTIFIED BY '${escaped_pass}';
+ALTER USER '${PANEL_DB_USER}'@'127.0.0.1' IDENTIFIED BY '${escaped_pass}';
+CREATE DATABASE IF NOT EXISTS \`${PANEL_DB_NAME}\`;
+GRANT ALL PRIVILEGES ON \`${PANEL_DB_NAME}\`.* TO '${PANEL_DB_USER}'@'127.0.0.1' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+SQL
+}
+
 # ─── PANEL FULL AUTO-INSTALL ───────────────────
 install_panel_guided() {
     need_root || return
@@ -441,13 +472,7 @@ install_panel_guided() {
 
     # ── 4. MariaDB setup ──────────────────────
     run_task "Start MariaDB" systemctl enable --now mariadb || return 1
-    run_task "Create panel database + user" \
-        bash -c "mysql -e \"
-            CREATE USER IF NOT EXISTS '${PANEL_DB_USER}'@'127.0.0.1' IDENTIFIED BY '${PANEL_DB_PASS}';
-            CREATE DATABASE IF NOT EXISTS \`${PANEL_DB_NAME}\`;
-            GRANT ALL PRIVILEGES ON \`${PANEL_DB_NAME}\`.* TO '${PANEL_DB_USER}'@'127.0.0.1' WITH GRANT OPTION;
-            FLUSH PRIVILEGES;
-        \"" || return 1
+    run_task "Create panel database + user" create_panel_database || return 1
 
     # ── 5. Download Panel files ────────────────
     run_task "Create panel directory" mkdir -p "$PANEL_DIR" || return 1
